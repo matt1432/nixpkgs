@@ -5,7 +5,7 @@
   ...
 }:
 let
-  inherit (lib) mkIf types;
+  inherit (lib) getExe mkIf types;
   inherit (lib.lists) optionals;
   inherit (lib.attrsets) optionalAttrs;
   inherit (lib.strings) concatStringsSep escapeShellArg;
@@ -22,11 +22,10 @@ in
     githubApiTokenFile = mkOption {
       type = types.path;
       example = "/run/secrets/gh-token";
-
       description = ''
         Path to a file containing your GitHub API token like so:
 
-        ```env
+        ```
         ghp_...
         ```
 
@@ -40,7 +39,6 @@ in
       cloneDir = mkOption {
         type = types.path;
         example = "/home/nixos/git/nixpkgs";
-
         default = "${cfg.dataDir}/nixpkgs";
         defaultText = "/var/lib/pr-tracker/nixpkgs";
         description = ''
@@ -57,7 +55,6 @@ in
       remote = mkOption {
         type = types.str;
         example = "upstream";
-
         default = "origin";
         description = ''
           The remote name in the repository corresponding to upstream Nixpkgs.
@@ -69,7 +66,7 @@ in
         default = true;
         description = ''
           Whether you want this service to manage a clone of the nixpkgs
-          repo in `cfg.dataDir`.
+          repo in `services.pr-tracker.dataDir`.
         '';
       };
 
@@ -79,7 +76,11 @@ in
 
         default = "30min";
         description = ''
-          How often to fetch nixpkgs if `cfg.nixpkgsClone.managedByModule` is true.
+          How often to fetch nixpkgs if `services.pr-tracker.nixpkgsClone.managedByModule`
+          is true.
+
+          The format is described in
+          {manpage}`systemd.time(7)`.
         '';
       };
     };
@@ -172,7 +173,7 @@ in
       type = types.port;
       default = 3000;
       description = ''
-        TCP port where pr-tracker socket listens.
+        TCP port where pr-tracker will listen on.
       '';
     };
 
@@ -189,18 +190,11 @@ in
     let
       useClone = cfg.nixpkgsClone.managedByModule;
 
-      prestart = "${
-        pkgs.writeShellApplication {
-          name = "pr-tracker-pre";
-          runtimeInputs = [ pkgs.git ];
-
-          text = ''
-            if [ ! -d ${cfg.nixpkgsClone.cloneDir} ]; then
-                git clone https://github.com/NixOS/nixpkgs.git ${cfg.nixpkgsClone.cloneDir}
-            fi
-          '';
-        }
-      }/bin/pr-tracker-pre";
+      preStart = ''
+        if [ ! -d ${cfg.nixpkgsClone.cloneDir} ]; then
+          ${getExe pkgs.git} clone https://github.com/NixOS/nixpkgs.git ${cfg.nixpkgsClone.cloneDir}
+        fi
+      '';
 
       commonUnitSettings = {
         User = cfg.user;
@@ -232,57 +226,54 @@ in
         wantedBy = [ "sockets.target" ];
       };
 
-      systemd.services.pr-tracker = {
+      systemd.services.pr-tracker = optionalAttrs useClone { inherit preStart; } // {
         path = [ pkgs.git ];
 
-        serviceConfig =
-          optionalAttrs useClone { ExecStartPre = prestart; }
-          // commonUnitSettings
-          // {
-            Restart = "always";
+        serviceConfig = commonUnitSettings // {
+          Restart = "always";
 
-            StandardInput = "file:${cfg.githubApiTokenFile}";
+          StandardInput = "file:${cfg.githubApiTokenFile}";
 
-            ExecStart = concatStringsSep " " (
-              [
-                "${cfg.package}/bin/pr-tracker"
-                "--source-url ${escapeShellArg cfg.sourceUrl}"
-                "--user-agent ${escapeShellArg cfg.userAgent}"
-                "--path ${cfg.nixpkgsClone.cloneDir}"
-                "--remote ${cfg.nixpkgsClone.remote}"
-              ]
-              ++ optionals (cfg.mountPath != null) [ "--mount ${cfg.mountPath}" ]
-            );
+          ExecStart = concatStringsSep " " (
+            [
+              (getExe cfg.package)
+              "--source-url ${escapeShellArg cfg.sourceUrl}"
+              "--user-agent ${escapeShellArg cfg.userAgent}"
+              "--path ${cfg.nixpkgsClone.cloneDir}"
+              "--remote ${cfg.nixpkgsClone.remote}"
+            ]
+            ++ optionals (cfg.mountPath != null) [ "--mount ${cfg.mountPath}" ]
+          );
 
-            # Hardening
-            CapabilityBoundingSet = "";
-            LockPersonality = true;
-            MemoryDenyWriteExecute = true;
-            PrivateUsers = true;
-            ProtectClock = true;
-            ProtectControlGroups = true;
-            ProtectHome = true;
-            ProtectHostname = true;
-            ProtectKernelLogs = true;
-            ProtectKernelModules = true;
-            ProtectKernelTunables = true;
-            ProtectProc = "invisible";
-            ProcSubset = "pid";
-            ProtectSystem = "strict";
-            RestrictAddressFamilies = [
-              "AF_INET"
-              "AF_INET6"
-              "AF_NETLINK"
-            ];
-            RestrictNamespaces = true;
-            RestrictRealtime = true;
-            SystemCallArchitectures = "native";
-            SystemCallFilter = [
-              "@system-service"
-              "@pkey"
-            ];
-            UMask = "0077";
-          };
+          # Hardening
+          CapabilityBoundingSet = "";
+          LockPersonality = true;
+          MemoryDenyWriteExecute = true;
+          PrivateUsers = true;
+          ProtectClock = true;
+          ProtectControlGroups = true;
+          ProtectHome = true;
+          ProtectHostname = true;
+          ProtectKernelLogs = true;
+          ProtectKernelModules = true;
+          ProtectKernelTunables = true;
+          ProtectProc = "invisible";
+          ProcSubset = "pid";
+          ProtectSystem = "strict";
+          RestrictAddressFamilies = [
+            "AF_INET"
+            "AF_INET6"
+            "AF_NETLINK"
+          ];
+          RestrictNamespaces = true;
+          RestrictRealtime = true;
+          SystemCallArchitectures = "native";
+          SystemCallFilter = [
+            "@system-service"
+            "@pkey"
+          ];
+          UMask = "0077";
+        };
       };
 
       systemd.timers.pr-tracker-update = optionalAttrs useClone {
@@ -295,6 +286,7 @@ in
 
       systemd.services.pr-tracker-update = optionalAttrs useClone {
         path = with pkgs; [ git ];
+        inherit preStart;
 
         script = ''
           set -eu
@@ -304,7 +296,6 @@ in
         serviceConfig = commonUnitSettings // {
           Requires = "pr-tracker";
           Type = "oneshot";
-          ExecStartPre = prestart;
         };
       };
     };
