@@ -86,6 +86,12 @@ in
         description = ''
           Whether you want this service to manage a clone of the nixpkgs
           repo in `services.pr-tracker.dataDir`.
+
+          According to pr-tracker's about page:
+          The program must be supplied with a local checkout of the monitored
+          git repository.
+
+          If you want to manage that by yourself, set this option to `false`
         '';
       };
 
