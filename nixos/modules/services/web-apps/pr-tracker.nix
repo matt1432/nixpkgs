@@ -12,6 +12,7 @@ let
   inherit (lib.options) mkEnableOption mkOption mkPackageOption;
 
   cfg = config.services.pr-tracker;
+  dataDir = "/var/lib/pr-tracker";
 
   useClone = cfg.nixpkgsClone.managedByModule;
 
@@ -24,8 +25,8 @@ let
   commonUnitSettings = {
     User = cfg.user;
     Group = cfg.group;
-    StateDirectory = builtins.baseNameOf cfg.dataDir;
-    WorkingDirectory = cfg.dataDir;
+    StateDirectory = builtins.baseNameOf dataDir;
+    WorkingDirectory = dataDir;
     LimitNOFILE = "1048576";
     PrivateTmp = true;
     PrivateDevices = true;
@@ -58,7 +59,7 @@ in
       cloneDir = mkOption {
         type = types.path;
         example = "/home/nixos/git/nixpkgs";
-        default = "${cfg.dataDir}/nixpkgs";
+        default = "${dataDir}/nixpkgs";
         defaultText = "/var/lib/pr-tracker/nixpkgs";
         description = ''
           The path to the cloned nixpkgs pr-tracker will use.
@@ -165,21 +166,6 @@ in
       '';
     };
 
-    dataDir = mkOption {
-      type = types.path;
-      example = "/home/nixos/git";
-      default = "/var/lib/pr-tracker";
-      description = ''
-        The data directory for pr-tracker.
-
-        ::: {.note}
-        If left as the default value this directory will automatically be created
-        before the pr-tracker server starts, otherwise you are responsible for ensuring
-        the directory exists with appropriate ownership and permissions.
-        :::
-      '';
-    };
-
     listen = mkOption {
       type = types.str;
       default = "0.0.0.0";
@@ -210,7 +196,7 @@ in
     users.users = optionalAttrs (cfg.user == "pr-tracker") {
       pr-tracker = {
         group = cfg.group;
-        home = cfg.dataDir;
+        home = dataDir;
         isSystemUser = true;
       };
     };
