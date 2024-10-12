@@ -18,7 +18,7 @@ let
 
   preStart = ''
     if [ ! -d ${cfg.nixpkgsClone.cloneDir} ]; then
-      ${getExe pkgs.git} clone https://github.com/NixOS/nixpkgs.git ${cfg.nixpkgsClone.cloneDir}
+        ${getExe pkgs.git} clone https://github.com/NixOS/nixpkgs.git ${cfg.nixpkgsClone.cloneDir}
     fi
   '';
 
@@ -85,12 +85,8 @@ in
         type = types.bool;
         default = true;
         description = ''
-          Whether you want this service to manage a clone of the nixpkgs
-          repo in `services.pr-tracker.dataDir`.
-
-          According to pr-tracker's about page:
-          The program must be supplied with a local checkout of the monitored
-          git repository.
+          Whether you want this service to manage itself a clone of the nixpkgs
+          repository to work with in `services.pr-tracker.dataDir`.
 
           If you want to manage that by yourself, set this option to `false`
         '';
@@ -104,24 +100,27 @@ in
           How often to fetch nixpkgs if `services.pr-tracker.nixpkgsClone.managedByModule`
           is true.
 
-          The format is described in
-          {manpage}`systemd.time(7)`.
+          The format is described in {manpage}`systemd.time(7)`.
         '';
       };
     };
 
     userAgent = mkOption {
       type = types.str;
-      example = "my pr-tracker";
+      example = "pr-tracker run by a NixOS user";
       description = ''
-        The User-Agent string to use when contacting the GitHub API.
+        The User-Agent string used in the headers of the https requests when sending API request to GitHub.
+        It is recommended to contain your GitHub username and application name.
+
+        See the [GitHub Documentation](https://docs.github.com/en/rest/using-the-rest-api/getting-started-with-the-rest-api#user-agent) for more details.
       '';
     };
 
     sourceUrl = mkOption {
       type = types.str;
       example = "https://github.com/me/my-pr-tracker-fork";
-      default = "https://git.qyliss.net/pr-tracker";
+      default = cfg.package.meta.homepage or "https://git.qyliss.net/pr-tracker";
+      defaultText = "https://git.qyliss.net/pr-tracker";
       description = ''
         The URL where users can download the program's source code.
       '';
@@ -135,6 +134,8 @@ in
         A "mount" path can be specified, which will be prefixed to all
         of the server's routes, so that it can be served at a non-root
         HTTP path.
+
+        Adding a leading slash to your mount path is optional.
       '';
     };
 
